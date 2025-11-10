@@ -277,7 +277,7 @@ module Prawn
           started_new_page_at_row = -1
 
           # If there isn't enough room left on the page to fit the first data row
-          # (excluding the header), start the table on the next page.
+          # (including the header), start the table on the next page.
           needed_height = row(0).height
           if @header
             if @header.is_a? Integer
@@ -293,30 +293,23 @@ module Prawn
           end
         end
 
-        # Duplicate each cell of the header row into @header_row so it can be
-        # modified in before_rendering_page callbacks.
-        if @header
-          @header_row = Cells.new
-          if @header.is_a? Integer
-            @header.times do |r|
-              row(r).each { |cell| @header_row[cell.row, cell.column] = cell.dup }
-            end
-            last_header_row = @header - 1 # 0-indexed
-          else
-            row(0).each { |cell| @header_row[cell.row, cell.column] = cell.dup }
-            last_header_row = 0
-          end
-        end
-
         # Track cells to be drawn on this page. They will all be drawn when this
         # page is finished.
         cells_this_page = []
 
+        header_cells = []
+        header_count = @header.is_a?(Integer) ? @header : @header ? 1 : 0
+        header_height = header_count.times.sum { row(_1).height }
+        last_header_row = header_count - 1
+
         @cells.each do |cell|
           skip_cell = false
-          if (cell.height > (cell.y + offset) - ref_bounds.absolute_bottom &&
-             cell.row > started_new_page_at_row) ||
-             (options[:page_splits] && cell.column == 0 && options[:page_splits].include?(cell.row))
+
+          available_space_on_page = (cell.y + offset) - ref_bounds.absolute_bottom
+          is_not_first_row_on_page = cell.row > started_new_page_at_row
+          is_forced_page_split = options[:page_splits] && cell.column == 0 && options[:page_splits].include?(cell.row)
+
+          if (cell.height > available_space_on_page && is_not_first_row_on_page) || is_forced_page_split
             # Ink all cells on the current page
             if @before_rendering_page
               c = Cells.new(cells_this_page.map { |c, _| c })
@@ -327,21 +320,10 @@ module Prawn
 
             # start a new page or column
             @pdf.bounds.move_past_bottom
-            if cell.row > 0 && @header
-              if @header.is_a? Integer
-                header_height = 0
-                y_coord = @pdf.cursor
-                @header.times do |h|
-                  additional_header_height = add_header(cells_this_page, y_coord-header_height, cell.row-1, h)
-                  header_height += additional_header_height
-                end
-              else
-                header_height = add_header(cells_this_page, @pdf.cursor, cell.row-1)
-              end
-            else
-              header_height = 0
-            end
+
+            cells_this_page += header_cells if cell.row > 0 && @header
             offset = @pdf.y - cell.y - header_height
+
             started_new_page_at_row = cell.row
           elsif @header && @hide_samepage_header && cell.row <= last_header_row # we want repeated headers but no first header (top of the page)
             margin_of_error = 5.0
@@ -380,7 +362,11 @@ module Prawn
             cell.background_color ||= @row_colors[index % @row_colors.length]
           end
 
-          cells_this_page << [cell, [x, y]] unless skip_cell
+          unless skip_cell
+            cells_this_page << [cell, [x, y]]
+            header_cells << [cell, [x, y]] if cell.row <= last_header_row
+          end
+
           last_y = y
         end
         # Draw the last page of cells
@@ -542,24 +528,6 @@ module Prawn
       cells
     end
 
-    # Add the header row(s) to the given array of cells at the given y-position.
-    # Number the row with the given +row+ index, so that the header appears (in
-    # any Cells built for this page) immediately prior to the first data row on
-    # this page.
-    #
-    # Return the height of the header.
-    #
-    def add_header(page_of_cells, y, row, row_of_header=nil)
-      rows_to_operate_on = @header_row
-      rows_to_operate_on = @header_row.rows(row_of_header) if row_of_header
-      rows_to_operate_on.each do |cell|
-        cell.row = row
-        cell.dummy_cells.each {|c| c.row = row }
-        page_of_cells << [cell, [cell.x, y]]
-      end
-      rows_to_operate_on.height
-    end
-
     # Raises an error if the data provided cannot be converted into a valid
     # table.
     #
@@ -654,6 +622,4 @@ module Prawn
       @epsilon
     end
   end
-
-
 end
