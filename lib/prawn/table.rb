@@ -550,14 +550,14 @@ module Prawn
     # Return the height of the header.
     #
     def add_header(page_of_cells, y, row, row_of_header=nil)
-      rows_to_operate_on = @header_row
-      rows_to_operate_on = @header_row.rows(row_of_header) if row_of_header
-      rows_to_operate_on.each do |cell|
+      row_to_operate_on = @header_row
+      row_to_operate_on = @header_row.rows(row_of_header) if row_of_header
+      row_to_operate_on.each do |cell|
+        cell.dummy_cells.each {|c| c.row = row + (c.row - cell.row) }
         cell.row = row
-        cell.dummy_cells.each {|c| c.row = row }
         page_of_cells << [cell, [cell.x, y]]
       end
-      rows_to_operate_on.height
+      row_to_operate_on.height
     end
 
     # Raises an error if the data provided cannot be converted into a valid
